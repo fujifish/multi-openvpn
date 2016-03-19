@@ -1,0 +1,169 @@
+<html style="height:100%">
+  <head>
+    <title>Multi OpenVPN</title>
+    <link rel="stylesheet" href="./bootstrap.css">
+    <link rel="stylesheet" href="./css/font-awesome.min.css">
+    <script src="./jquery-1.11.2.js"></script>
+    <script src="./bootstrap.js"></script>
+
+    <script>
+
+      var remote = require('remote');
+      var app = remote.require('app');
+      var shell = require('shell');
+      var ipc = require('ipc');
+      var prefs;
+      var webview;
+      var address;
+      var message;
+
+      function connect() {
+        $("#options").toggle();
+        $('#spinner').show();
+        $('#message').hide();
+        var newServer = $("#server-select :selected").text() === '<New>';
+        if (newServer) {
+          address = $("#server-address").val();
+        } else {
+          address = $("#server-select :selected").text();
+        }
+        remote.getCurrentWindow().setTitle(address);
+
+        webview = document.createElement("webview");
+        webview.setAttribute('disablewebsecurity', '');
+        webview.setAttribute('nodeintegration', '');
+        webview.setAttribute('id', 'web-view');
+        webview.setAttribute('style', 'margin:0; padding: 0;');
+        webview.setAttribute('src', address);
+
+        webview.addEventListener('ipc-message', function(e) {
+          console.log('ipc: ' + e.channel + ': ' + e.args);
+          if (newServer) {
+            addServerToSelect(address);
+            prefs.servers[address] = {};
+          }
+
+          if (e.channel === 'disconnect') {
+            prefs.servers[address].connected = false;
+            localStorage.setItem('prefs', JSON.stringify(prefs));
+          } else if (e.channel === 'connected') {
+            prefs.servers[address].connected = true;
+            localStorage.setItem('prefs', JSON.stringify(prefs));
+          }
+        });
+
+        webview.addEventListener('did-finish-load', function() {
+
+          function hookupBase() {
+            console.log('hookupBase');
+            var ipc = require('ipc');
+            var checkDisc = true;
+            var checkAction = true;
+
+            var interval = setInterval(function() {
+              if (checkDisc) {
+                var disc = document.getElementById('disconnect');
+                if (disc) {
+                  ipc.sendToHost('connected');
+                  checkAction = true;
+                  checkDisc = false;
+                  disc.addEventListener('click', function() {
+                    ipc.sendToHost('disconnect');
+                  });
+                }
+              }
+
+              if (checkAction) {
+                var action = document.getElementById('action');
+                if (action) {
+                  action.setAttribute('style', 'display:none');
+                  ipc.sendToHost('disconnect');
+                  checkAction = false;
+                  checkDisc = true;
+                }
+              }
+            },500);
+          }
+          webview.executeJavaScript('(' + hookupBase.toString() + ')();');
+
+          $('#spinner').hide();
+        });
+
+        webview.addEventListener('did-fail-load', function(code, description) {
+          document.body.removeChild(webview);
+          $('#message').text('Error ' + code.errorCode + (description ? ': ' + description : ''))
+          $('#message').show();
+          $("#options").toggle();
+          $('#spinner').hide();
+        });
+
+        document.body.appendChild(webview);
+      }
+
+      function checkAddress() {
+        if ($("#server-address").val().match('^https://.+')) {
+          $("#server-connect").removeAttr('disabled');
+        } else {
+          $("#server-connect").attr('disabled', 'disabled');
+        }
+      }
+
+      function selectionChanged() {
+        if ($("#server-select :selected").text() === '<New>') {
+          $('#new-server').show();
+        } else {
+          $('#new-server').hide();
+          $("#server-connect").removeAttr('disabled');
+        }
+      }
+
+      function addServerToSelect(server, selected) {
+        var select = document.getElementById('server-select');
+        var option = document.createElement("option");
+        if (selected) {
+          option.setAttribute('selected', 'selected');
+        }
+        var address = document.createTextNode(server);
+        option.appendChild(address);
+        select.appendChild(option);
+      }
+
+      onload = function() {
+        prefs = JSON.parse(localStorage.getItem('prefs') || '{"servers": {}}');
+        Object.keys(prefs.servers).forEach(function(server, index) {
+          addServerToSelect(server, index === 0);
+        });
+        selectionChanged();
+      }
+    </script>
+
+  </head>
+  <body style="margin:0; padding: 0;">
+
+    <div id="options">
+      <div class="form-group" style="margin: 16px;">
+
+        <h4>Select OpenVPN Server</h4>
+        <select id="server-select" class="form-control" autofocus onchange="selectionChanged();">
+          <option>&lt;New&gt;</option>
+        </select>
+
+        <div id="new-server" style="display:none">
+          <h5>Enter OpenVPN Server Address</h5>
+          <input id="server-address" type="text" class="center-block form-control" value="https://" onkeyup="checkAddress();" >
+        </div>
+
+        <input id="server-connect" type="button" class="btn btn-primary pull-right" style="margin-top: 8px;" value="Connect" onclick="connect();"
+          disabled="disabled">
+
+      </div>
+    </div>
+
+      <h3 id="message" style="display:none;text-align:center;margin-top:120px;">sdsd</h3>
+
+    <div id="spinner" style="position:fixed; top:0; left:0; background:rgba(0,0,0,0.4); z-index:5; width:100%; height:100%; display:none;">
+      <i class="fa fa-3x fa-circle-o-notch fa-spin" style="position: absolute;top:45%;left:43%;"></i>
+    </div>
+
+  </body>
+</html>

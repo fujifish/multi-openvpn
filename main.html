@@ -1,0 +1,222 @@
+<html style="height:100%">
+  <head>
+    <title>Multi OpenVPN</title>
+    <link rel="stylesheet" href="./bootstrap.css">
+    <link rel="stylesheet" href="./css/font-awesome.min.css">
+    <script src="./jquery-1.11.2.js"></script>
+    <script src="./bootstrap.js"></script>
+
+    <script>
+
+      var remote = require('remote');
+      var app = remote.require('app');
+      var shell = require('shell');
+      var ipc = require('ipc');
+      var prefs;
+
+
+      function connect(id) {
+        var webview;
+
+        $("#controls-"+id).hide();
+        $('#spinner-'+id).show();
+        $('#message-'+id).hide();
+        $('#refresh-'+id).show();
+
+        var address = $("#server-address-"+id).val();
+
+        $('#header-text-'+id).text(address);
+        $('#header-'+id).show();
+
+        var webview = document.createElement("webview");
+        webview.setAttribute('disablewebsecurity', '');
+        webview.setAttribute('nodeintegration', '');
+        webview.setAttribute('id', 'web-view-'+id);
+        webview.setAttribute('style', 'height: 100%; margin:0; padding: 0;');
+        webview.setAttribute('src', 'https://' + address);
+
+        webview.addEventListener('console-message', function(e) {
+          console.log(e.message);
+        });
+
+        webview.addEventListener('ipc-message', function(e) {
+          console.log('ipc: ' + e.channel + ': ' + e.args);
+
+          if (e.channel === 'disconnect') {
+            $('#remove-'+id).show();
+            prefs.servers[address].connected = false;
+            localStorage.setItem('prefs', JSON.stringify(prefs));
+          } else if (e.channel === 'connected') {
+            $('#remove-'+id).hide();
+            prefs.servers[address].connected = true;
+            localStorage.setItem('prefs', JSON.stringify(prefs));
+          }
+        });
+
+        webview.addEventListener('did-finish-load', function() {
+
+          if (!prefs.servers[address]) {
+            prefs.servers[address] = {};
+            localStorage.setItem('prefs', JSON.stringify(prefs));
+          }
+
+          function hookupBase() {
+            console.log('hookupBase');
+            function _multiVPN() {
+              var ipc = require('ipc');
+              var discFound = false;
+              var actionFound = false;
+
+              function onDisconnect() {
+                ipc.sendToHost('disconnect');
+              }
+
+              function doChecks() {
+                if (!discFound) {
+                  var iframe = document.getElementById('client');
+                  if (iframe) {
+                    var innerDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    var disc = innerDoc.getElementById('disconnect');
+                    if (disc) {
+                      console.log('>> found disconnect element')
+                      ipc.sendToHost('connected');
+                      disc.addEventListener('click', onDisconnect);
+                      discFound = true;
+                      actionFound = false;
+                    }
+                  }
+                }
+
+                if (!actionFound) {
+                  var action = document.getElementById('action');
+                  if (action) {
+                    console.log('>> found action element')
+                    action.setAttribute('style', 'display:none');
+                    ipc.sendToHost('disconnect');
+                    discFound = false;
+                    actionFound = true;
+                  }
+                }
+              }
+
+              doChecks();
+              setInterval(doChecks, 300);
+            }
+            _multiVPN();
+          }
+          webview.executeJavaScript('(' + hookupBase.toString() + ')();');
+
+          $('#spinner-'+id).hide();
+        });
+
+        webview.addEventListener('did-fail-load', function(code, description) {
+          document.getElementById('server-panel-cont-'+id).removeChild(webview);
+          $('#message-'+id).text('Error ' + code.errorCode + (description ? ': ' + description : ''))
+          $('#message-'+id).show();
+          $('#spinner-'+id).hide();
+          $("#controls-"+id).show();
+        });
+
+        document.getElementById('server-panel-cont-'+id).appendChild(webview);
+      }
+
+      function checkAddress(id) {
+        if ($("#server-address-"+id).val().length > 0) {
+          $("#server-connect-"+id).removeAttr('disabled');
+        } else {
+          $("#server-connect-"+id).attr('disabled', 'disabled');
+        }
+      }
+
+      function addServerPanel(id, address) {
+        var template = document.getElementById('server-panel-template').innerHTML;
+        var panelText = template.replace(/{{id}}/g, id).replace(/{{server}}/g, address||'Enter Server Address').trim();
+        var panel = $.parseHTML(panelText)[0];
+        document.getElementById('main-panel').insertBefore(panel, document.getElementById('new-server-panel'));
+        if (address) {
+          $('#server-address-'+id).val(address);
+          checkAddress(id);
+          if (prefs.servers[address] && prefs.servers[address].connected) {
+            connect(id);
+          }
+        }
+      }
+
+      function refreshServerPanel(id) {
+        $('#spinner-'+id).show();
+        var webview = document.getElementById('web-view-'+id);
+        webview.reload();
+      }
+
+      function removeServerPanel(id) {
+        var address = $('#header-text-'+id).text();
+        var panel = document.getElementById('server-panel-'+id);
+        document.getElementById('main-panel').removeChild(panel);
+        delete prefs.servers[address];
+        localStorage.setItem('prefs', JSON.stringify(prefs));
+      }
+
+      function addNewPanel() {
+        var numServers = Object.keys(prefs.servers).length;
+        addServerPanel(numServers);
+      }
+
+      onload = function() {
+        prefs = JSON.parse(localStorage.getItem('prefs') || '{"servers": {}}');
+        Object.keys(prefs.servers).forEach(function(server, index) {
+          addServerPanel(index, server);
+        });
+      }
+    </script>
+
+  </head>
+  <body style="margin:0; padding: 0;">
+
+    <div id="server-panel-template" style="display:none">
+      <div id="server-panel-{{id}}" class="col col-md-3" style="width: 360px; height: 520px;padding:0; margin: 16px 0 0 16px;">
+        <div id="server-panel-cont-{{id}}" style="width: 100%; height: 100%;border: solid 1px;padding:0;margin:0">
+          <div id="controls-{{id}}" style="margin-top: 56px;">
+            <div class="form-group" style="margin: 16px;">
+              <div id="new-server-{{id}}" style="">
+                <div class="input-group">
+                  <span class="input-group-addon">https://</span>
+                  <input id="server-address-{{id}}" type="text" class="form-control" onkeyup="checkAddress({{id}});">
+                  <span class="input-group-addon" style="cursor:hand;background-color:#337ab7;color:white" onclick="connect({{id}});">Go!</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="header-{{id}}" style="text-align:center;width:100%;position:absolute;top:0;left:0;background:rgba(0,0,0,0.2); z-index:5;">
+            <i id="refresh-{{id}}" class="fa fa-refresh fa-lg" style="display:none;float:left;margin:14px 0 0 14px;cursor:hand;" onclick="refreshServerPanel({{id}});"></i>
+            <span id="header-text-{{id}}" style="font-size: 18px;line-height: 40px;">{{server}}</span>
+            <i id="remove-{{id}}" class="fa fa-remove fa-lg" style="float:right;margin:14px 14px 0 0;cursor:hand;" onclick="removeServerPanel({{id}});"></i>
+          </div>
+          <h3 id="message-{{id}}" style="display:none;text-align:center;margin-top: 120px;"></h3>
+          <div id="spinner-{{id}}" style="position:absolute; top:0; left:0; background:rgba(0,0,0,0.4); z-index:5; width:100%; height:100%; display:none;">
+            <i class="fa fa-3x fa-circle-o-notch fa-spin" style="position: relative;top:45%;left:43%;"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin: 16px;">
+
+      <!-- <button type="button" class="btn btn-primary" onclick="addNewPanel();">
+        <span class="glyphicon glyphicon-plus" aria-hidden="true"></span> Add
+      </button> -->
+
+      <div id="main-panel" class="row">
+
+        <div id="new-server-panel" class="col col-md-1" style="width: 360px; height: 520px;padding:0; margin: 16px 0 0 16px;">
+          <div style="background:rgba(0,0,0,0.4); z-index:5;width: 100%; height: 100%; border:solid 1px" onclick="addNewPanel();">
+            <i class="fa fa-plus fa-4x" style="position:relative; top:45%; left:44%;"></i>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+
+
+  </body>
+</html>

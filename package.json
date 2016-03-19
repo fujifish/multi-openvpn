@@ -1,0 +1,11 @@
+{
+  "name": "MultiOpenVPN",
+  "version": "1.0.0",
+  "main": "main.js",
+  "devDependencies": {
+    "electron-packager": "^5.2.1"
+  },
+  "scripts": {
+    "build": "electron-packager . --icon=atom.icns --platform=darwin --arch=x64 --version=0.37.2"
+  }
+}
