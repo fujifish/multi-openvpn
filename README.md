@@ -3,8 +3,11 @@
 Multi OpenVPN client based on Electron
 
 * Aggregates multiple OpenVPN addresses
+* Multiple OpenVPN's can be open simultaneously
 * Utilizes the web based interface of OpenVPN
 * Based on [Electron](http://electron.atom.io)
+
+![screenshot1](/screenshot1.png)
 
 ## How to Build
 
